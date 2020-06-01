@@ -7,6 +7,15 @@ import cv2
 import imutils
 import time
 
+def on_trackbar_change(position):
+    return
+
+cv2.namedWindow('Frame')
+
+# Set mouse callback to capture HSV value on click
+cv2.createTrackbar("Left Limit", "Frame", 50, 250, on_trackbar_change)
+cv2.createTrackbar("Right Limit", "Frame", 50, 250, on_trackbar_change)
+
 # construct the argument parse and parse the arguments
 ap = argparse.ArgumentParser()
 ap.add_argument("-v", "--video", help="path to the (optional) video file")
@@ -18,6 +27,8 @@ args = vars(ap.parse_args())
 # list of tracked points
 greenLower = (29, 86, 6)
 greenUpper = (64, 255, 255)
+left_limit = 0
+right_limit = 0
 pts = deque(maxlen=args["buffer"])
 # if a video path was not supplied, grab the reference
 # to the webcam
@@ -31,6 +42,10 @@ time.sleep(2.0)
 
 # keep looping
 while True:
+    # grab the values of the trackbars
+    left_limit = cv2.getTrackbarPos("Left Limit", "Frame")
+    right_limit = cv2.getTrackbarPos("Right Limit", "Frame")
+
     # grab the current frame
     frame = vs.read()
     # handle the frame from VideoCapture or VideoStream
@@ -41,15 +56,23 @@ while True:
         break
     # resize the frame, blur it, and convert it to the HSV
     # color space
+    # gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     frame = imutils.resize(frame, width=600)
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     blurred = cv2.GaussianBlur(frame, (11, 11), 0)
     hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
     # construct a mask for the color "green", then perform
     # a series of dilations and erosions to remove any small
     # blobs left in the mask
     mask = cv2.inRange(hsv, greenLower, greenUpper)
+
     mask = cv2.erode(mask, None, iterations=2)
     mask = cv2.dilate(mask, None, iterations=2)
+
+    circles = cv2.HoughCircles(gray, cv2.HOUGH_GRADIENT, 1.2, 100)
+    if circles is not None:
+        # convert the (x, y) coordinates and radius of the circles to integers
+        circles = np.round(circles[0, :]).astype("int")
 
     # find contours in the mask and initialize the current
     # (x, y) center of the ball
@@ -73,19 +96,17 @@ while True:
             cv2.circle(frame, (int(x), int(y)), int(radius),
                        (0, 0, 0), 2)
             cv2.circle(frame, center, 5, (0, 0, 255), -1)
-    # update the points queue
-    pts.appendleft(center)
 
-    # loop over the set of tracked points
-    for i in range(1, len(pts)):
-        # if either of the tracked points are None, ignore
-        # them
-        if pts[i - 1] is None or pts[i] is None:
-            continue
-        # otherwise, compute the thickness of the line and
-        # draw the connecting lines
-        thickness = int(np.sqrt(args["buffer"] / float(i + 1)) * 2.5)
-        cv2.line(frame, pts[i - 1], pts[i], (0, 0, 255), thickness)
+    # draw the limits of the acceptable ball position
+
+    cv2.line(frame, (left_limit, 0), (left_limit, frame.shape[0]), (0, 255, 0), thickness=1)
+    cv2.line(frame, (frame.shape[1] - right_limit, 0), (frame.shape[1] - right_limit, frame.shape[0]), (0, 255, 0), thickness=1)
+
+    if center[0] <= left_limit:
+        print("gauche")
+    if center[0] >= frame.shape[1] - right_limit:
+        print("droite")
+
     # show the frame to our screen
     cv2.imshow("Frame", frame)
     key = cv2.waitKey(1) & 0xFF
